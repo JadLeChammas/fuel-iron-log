@@ -1,0 +1,150 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<title>Fuel &amp; Iron Log</title>
+<meta name="theme-color" content="#EEF1F3" media="(prefers-color-scheme: light)">
+<meta name="theme-color" content="#0F151B" media="(prefers-color-scheme: dark)">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="default">
+<meta name="apple-mobile-web-app-title" content="Fuel &amp; Iron">
+<link rel="manifest" href="/manifest.webmanifest">
+<link rel="icon" href="/icons/icon-192.png">
+<link rel="apple-touch-icon" href="/icons/apple-touch-icon.png">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@600;700&family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Mono:wght@500&display=swap">
+<link rel="stylesheet" href="/styles.css">
+</head>
+<body>
+<div class="auth" id="auth" hidden>
+  <div><h1>Fuel &amp; Iron Log</h1><p class="sub">Sign in to see your log.</p></div>
+  <form id="authForm" class="card" autocomplete="on">
+    <label class="f">Email<input id="aEmail" type="email" autocomplete="email" required></label>
+    <label class="f">Password<input id="aPass" type="password" autocomplete="current-password" minlength="6" required></label>
+    <p class="err" id="aErr"></p>
+    <div class="row"><button class="btn primary" type="submit" id="aSignIn">Sign in</button><button class="btn" type="button" id="aSignUp">Create account</button></div>
+  </form>
+</div>
+<div class="auth" id="booting"><p class="sub">Loading…</p></div>
+<div class="wrap" id="app" hidden>
+  <header>
+    <h1>Fuel &amp; Iron Log</h1>
+    <p class="sub">Food, training and weigh-ins in one place. <span id="saveState" class="status"></span></p>
+  </header>
+
+  <div id="noDb" class="banner" hidden></div>
+
+  <div class="plates" id="plates"></div>
+
+  <nav class="tabs" role="tablist">
+    <button role="tab" data-tab="today" aria-selected="true" id="tab-today">Today</button>
+    <button role="tab" data-tab="plan" aria-selected="false" id="tab-plan">Plan</button>
+    <button role="tab" data-tab="progress" aria-selected="false" id="tab-progress">Progress</button>
+    <button role="tab" data-tab="targets" aria-selected="false" id="tab-targets">Targets</button>
+  </nav>
+
+  <!-- TODAY -->
+  <section class="view" id="view-today">
+    <div class="card">
+      <div class="datebar">
+        <button class="btn" id="prevDay" aria-label="Previous day">‹</button>
+        <div class="d" id="dayLabel"></div>
+        <button class="btn" id="nextDay" aria-label="Next day">›</button>
+      </div>
+      <div class="row" style="justify-content:center"><button class="btn ghost sm" id="goToday">Jump to today</button></div>
+    </div>
+
+    <div class="card">
+      <div class="row between"><h2>Food</h2><span class="status" id="foodTotals"></span></div>
+      <div class="bar"><div class="t"><span>Calories</span><span class="num" id="kcalTxt"></span></div><div class="track"><div class="fill k" id="kcalFill"></div></div></div>
+      <div class="bar"><div class="t"><span>Protein</span><span class="num" id="protTxt"></span></div><div class="track"><div class="fill p" id="protFill"></div></div></div>
+      <div class="tblwrap"><table><thead><tr><th>Meal</th><th>Food</th><th class="r">kcal</th><th class="r">Protein g</th><th></th></tr></thead><tbody id="mealRows"></tbody></table></div>
+      <form class="addfood" id="foodForm" autocomplete="off">
+        <label class="f wide">Food<input id="fName" list="foodHistory" placeholder="e.g. Chicken rice bowl" required></label>
+        <label class="f">kcal<input id="fKcal" type="number" inputmode="decimal" min="0" step="1" required></label>
+        <label class="f">Protein g<input id="fProt" type="number" inputmode="decimal" min="0" step="0.1" required></label>
+        <label class="f">Meal<select id="fMeal"><option>Breakfast</option><option>Lunch</option><option>Dinner</option><option>Snack</option></select></label>
+        <button class="btn primary" type="submit">Add</button>
+      </form>
+      <datalist id="foodHistory"></datalist>
+      <p class="status" style="margin:0">Foods you've logged before fill in their calories and protein automatically.</p>
+    </div>
+
+    <div class="card">
+      <div class="row between"><h2>Training</h2>
+        <div class="seg" id="typeSeg"><button data-type="rest" aria-pressed="true">Rest</button><button data-type="gym" aria-pressed="false">Gym</button><button data-type="street" aria-pressed="false">Street</button></div>
+      </div>
+      <div id="gymBox" hidden>
+        <div class="row" style="margin-bottom:10px">
+          <select id="planPick" aria-label="Session from your plan"></select>
+          <button class="btn" id="loadPlan">Load session</button>
+        </div>
+        <div class="exgrid" id="exRows"></div>
+        <div class="row" style="margin-top:10px"><button class="btn sm" id="addEx">+ Exercise</button></div>
+      </div>
+      <div id="streetBox" hidden class="row">
+        <label class="f" style="flex:2">Activity<input id="sAct" placeholder="Pull-ups, dips, run…"></label>
+        <label class="f" style="flex:1">Minutes<input id="sMin" type="number" min="0" inputmode="numeric"></label>
+        <label class="f" style="flex-basis:100%">Notes<textarea id="sNotes" rows="2" placeholder="Sets, reps, how it felt"></textarea></label>
+      </div>
+      <div class="row between"><span class="status" id="trainNote"></span><button class="btn primary" id="saveTrain">Save training</button></div>
+    </div>
+
+    <div class="card">
+      <h2>Weigh-in</h2>
+      <div class="row">
+        <input id="wKg" type="number" inputmode="decimal" step="0.1" min="30" placeholder="kg" style="width:120px">
+        <button class="btn primary" id="saveW">Save weight</button>
+        <button class="btn ghost sm" id="delW" hidden>Remove</button>
+        <span class="status" id="wNote"></span>
+      </div>
+    </div>
+  </section>
+
+  <!-- PLAN -->
+  <section class="view" id="view-plan" hidden>
+    <div class="card">
+      <h2>Weekly program</h2>
+      <p class="sub" style="margin:0">Write what each session should be: exercises, sets, reps and working weight. Update the weight when you move up. Then on the Today tab, pick the session and tap "Load session".</p>
+    </div>
+    <div id="planList" style="display:grid;gap:16px"></div>
+    <div class="row between"><button class="btn" id="addSession">+ Session</button><button class="btn primary" id="savePlan">Save plan</button></div>
+  </section>
+
+  <!-- PROGRESS -->
+  <section class="view" id="view-progress" hidden>
+    <div class="card"><div class="row between"><h2>Body weight</h2><span class="status" id="wTrend"></span></div><div id="wChart"></div></div>
+    <div class="card"><div class="row between"><h2>Weekly averages</h2><div class="legend"><span><i style="background:var(--kcal)"></i>kcal / day</span><span><i style="background:var(--protein)"></i>protein g / day</span></div></div><div id="nChart"></div></div>
+    <div class="card">
+      <div class="row between"><h2>Lift progress</h2><select id="exPick" aria-label="Exercise"></select></div>
+      <div id="exChart"></div>
+    </div>
+    <div class="card"><h2>Recent sessions</h2><div class="tblwrap"><table><thead><tr><th>Date</th><th>Type</th><th>Details</th></tr></thead><tbody id="histRows"></tbody></table></div></div>
+  </section>
+
+  <!-- TARGETS -->
+  <section class="view" id="view-targets" hidden>
+    <div class="card">
+      <h2>Daily targets</h2>
+      <p class="sub" style="margin:0">Use the numbers your doctor or dietitian gave you. The Today bars measure against these.</p>
+      <div class="row">
+        <label class="f">Calories / day<input id="tKcal" type="number" min="0" inputmode="numeric" style="width:140px"></label>
+        <label class="f">Protein g / day<input id="tProt" type="number" min="0" inputmode="numeric" style="width:140px"></label>
+        <label class="f">Goal weight kg<input id="tGoal" type="number" step="0.1" min="30" inputmode="decimal" style="width:140px"></label>
+      </div>
+      <div class="row"><button class="btn primary" id="saveTargets">Save targets</button><span class="status" id="tNote"></span></div>
+    </div>
+    <div class="card">
+      <h2>Account</h2>
+      <div class="row between"><span class="status" id="whoami"></span><button class="btn" id="signOut">Sign out</button></div>
+    </div>
+  </section>
+</div>
+
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/dist/umd/supabase.js"></script>
+<script src="/config.js"></script>
+<script src="/app.js"></script>
+</body>
+</html>
