@@ -25,6 +25,11 @@ create table if not exists public.settings (
   plan           jsonb not null default '[]'::jsonb -- [{id, name, exercises:[{name,sets,reps,weight}]}]
 );
 
+-- Daily windows: kcal_min..kcal_target for calories, protein_target..protein_max for protein.
+-- (kcal_target is the calorie maximum and protein_target the protein minimum.)
+alter table public.settings add column if not exists kcal_min    integer;
+alter table public.settings add column if not exists protein_max integer;
+
 alter table public.days     enable row level security;
 alter table public.weighins enable row level security;
 alter table public.settings enable row level security;

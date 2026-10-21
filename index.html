@@ -150,10 +150,24 @@ try{const t=localStorage.getItem('fil-theme');if(t==='light'||t==='dark'){docume
   <section class="view" id="view-targets" hidden>
     <div class="card">
       <h2>Daily targets</h2>
-      <p class="sub" style="margin:0">Use the numbers your doctor or dietitian gave you. The Today rings measure against these.</p>
+      <p class="sub" style="margin:0">Use the numbers your doctor or dietitian gave you. The Today rings show where you are in each window.</p>
+      <fieldset class="win k">
+        <legend><i class="dot k"></i>Calories window</legend>
+        <p class="hint">Under the minimum is fine. Stay under the maximum.</p>
+        <div class="tgrid2">
+          <label class="f">Minimum<span class="suf"><input id="tKcalMin" type="number" min="0" inputmode="numeric"><i>kcal</i></span></label>
+          <label class="f">Maximum<span class="suf"><input id="tKcal" type="number" min="0" inputmode="numeric"><i>kcal</i></span></label>
+        </div>
+      </fieldset>
+      <fieldset class="win p">
+        <legend><i class="dot p"></i>Protein window</legend>
+        <p class="hint">Reach the minimum every day.</p>
+        <div class="tgrid2">
+          <label class="f">Minimum<span class="suf"><input id="tProt" type="number" min="0" inputmode="numeric"><i>g</i></span></label>
+          <label class="f">Maximum<span class="suf"><input id="tProtMax" type="number" min="0" inputmode="numeric"><i>g</i></span></label>
+        </div>
+      </fieldset>
       <div class="tgrid">
-        <label class="f">Calories / day<span class="suf"><input id="tKcal" type="number" min="0" inputmode="numeric"><i>kcal</i></span></label>
-        <label class="f">Protein / day<span class="suf"><input id="tProt" type="number" min="0" inputmode="numeric"><i>g</i></span></label>
         <label class="f">Goal weight<span class="suf"><input id="tGoal" type="number" step="0.1" min="30" inputmode="decimal"><i>kg</i></span></label>
       </div>
       <div class="row"><button class="btn primary" id="saveTargets">Save targets</button><span class="status" id="tNote"></span></div>

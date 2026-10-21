@@ -19,8 +19,10 @@ const IC={
   sessions:'<svg viewBox="0 0 24 24"><path d="M6.5 6.5v11M17.5 6.5v11M3.5 9v6M20.5 9v6M6.5 12h11"/></svg>'
 };
 // SVG progress ring. r is the radius in a 0..2r+stroke box; fraction is clamped to 0..1.
-function ringSvg(frac,r,sw){const c=2*Math.PI*r,f=Math.max(0,Math.min(1,frac||0)),s=2*r+sw;
-  return `<svg viewBox="0 0 ${s} ${s}" aria-hidden="true"><circle class="tr" cx="${s/2}" cy="${s/2}" r="${r}" stroke-width="${sw}"/><circle class="pg" cx="${s/2}" cy="${s/2}" r="${r}" stroke-width="${sw}" stroke-dasharray="${c}" stroke-dashoffset="${c*(1-f)}"${f?'':' style="opacity:0"'}/></svg>`}
+// band = [from,to] fractions of the ring to shade as the target window.
+function ringSvg(frac,r,sw,band){const c=2*Math.PI*r,f=Math.max(0,Math.min(1,frac||0)),s=2*r+sw;
+  const bd=band?`<circle class="band" cx="${s/2}" cy="${s/2}" r="${r}" stroke-width="${sw}" stroke-dasharray="${c*(band[1]-band[0])} ${c}" stroke-dashoffset="${-c*band[0]}"/>`:'';
+  return `<svg viewBox="0 0 ${s} ${s}" aria-hidden="true"><circle class="tr" cx="${s/2}" cy="${s/2}" r="${r}" stroke-width="${sw}"/>${bd}<circle class="pg" cx="${s/2}" cy="${s/2}" r="${r}" stroke-width="${sw}" stroke-dasharray="${c}" stroke-dashoffset="${c*(1-f)}"${f?'':' style="opacity:0"'}/></svg>`}
 function spark(vals){if(vals.length<2)return'';const lo=Math.min(...vals),hi=Math.max(...vals),rg=hi-lo||1;
   return `<svg class="spark" viewBox="0 0 100 28" preserveAspectRatio="none" aria-hidden="true"><polyline points="${vals.map((v,i)=>`${i/(vals.length-1)*100},${3+(hi-v)/rg*22}`).join(' ')}"/></svg>`}
 let toastT;function toast(t){const el=$('#toast');el.textContent=t;el.classList.add('on');clearTimeout(toastT);toastT=setTimeout(()=>el.classList.remove('on'),1600)}
@@ -35,15 +37,23 @@ async function writeNow(path,data){
   const[kind,key]=path.split('/');
   if(kind==='days') return sb.from('days').upsert({user_id:user.id,date:key,meals:data.meals||[],workout:data.workout||{type:'rest'}},{onConflict:'user_id,date'});
   if(kind==='weighins') return sb.from('weighins').upsert({user_id:user.id,date:key,kg:data.kg},{onConflict:'user_id,date'});
-  if(kind==='settings') return sb.from('settings').upsert({user_id:user.id,kcal_target:data.kcalTarget===''?null:data.kcalTarget??null,protein_target:data.proteinTarget===''?null:data.proteinTarget??null,goal_weight:data.goalWeight===''?null:data.goalWeight??null,plan:data.plan||[]},{onConflict:'user_id'});
+  if(kind==='settings'){
+    const nn=v=>v===''?null:v??null;
+    const row={user_id:user.id,kcal_target:nn(data.kcalTarget),kcal_min:nn(data.kcalMin),protein_target:nn(data.proteinTarget),protein_max:nn(data.proteinMax),goal_weight:nn(data.goalWeight),plan:data.plan||[]};
+    let r=await sb.from('settings').upsert(row,{onConflict:'user_id'});
+    // Database not updated yet (no kcal_min / protein_max columns): save everything else and say so.
+    if(r.error&&/kcal_min|protein_max/.test(r.error.message||'')){delete row.kcal_min;delete row.protein_max;r=await sb.from('settings').upsert(row,{onConflict:'user_id'});
+      if(!r.error)return {error:null,note:'Saved, except the calorie minimum and protein maximum: run the database update in Supabase first.'}}
+    return r;
+  }
 }
 function write(path,data){
   if(!user) return Promise.resolve();
   const q=(queues[path]||Promise.resolve()).then(async()=>{
     setSave('Saving…');
-    let {error}=await writeNow(path,data);
-    if(error){await new Promise(r=>setTimeout(r,500+Math.random()*700));({error}=await writeNow(path,data))}
-    setSave(error?'Couldn\'t save. Check your connection and try again.':'Saved');
+    let res=await writeNow(path,data);
+    if(res.error){await new Promise(r=>setTimeout(r,500+Math.random()*700));res=await writeNow(path,data)}
+    setSave(res.error?'Couldn\'t save. Check your connection and try again.':res.note||'Saved');
   });
   queues[path]=q;return q;
 }
@@ -123,12 +133,23 @@ function renderToday(){
       (its.length?its.map(m=>`<div class="item"><span class="n">${esc(m.name)}</span><span class="v">${fmtN(+m.kcal||0)}<small>kcal</small></span><span class="v">${r1(+m.protein||0)}<small>g</small></span><button class="x" data-del="${esc(m.id)}" aria-label="Remove ${esc(m.name)}">${TRASH}</button></div>`).join('')
         :`<button type="button" class="meal-add" data-addmeal="${esc(g)}">+ Add ${esc(g.toLowerCase())}</button>`)+`</div>`}).join('');
   const k=meals.reduce((s,m)=>s+(+m.kcal||0),0),p=meals.reduce((s,m)=>s+(+m.protein||0),0);
-  const tk=+S.settings.kcalTarget||0,tp=+S.settings.proteinTarget||0;
-  const ring=(cls,label,val,tgt,unit,fmt,leftWord,overWord)=>{const left=tgt-val;
-    const center=tgt?`<b>${fmt(Math.abs(left))}</b><small class="${left<0?'over':''}">${left>=0?leftWord:overWord}</small>`:`<b>${fmt(val)}</b><small>${unit}</small>`;
-    return `<div class="ringc ${cls}"><span class="lbl"><i class="dot ${cls}"></i>${label}</span><div class="rwrap" role="img" aria-label="${label}: ${fmt(val)} of ${tgt?fmt(tgt):'no target'} ${unit}">${ringSvg(tgt?val/tgt:0,46,10)}<div class="rc">${center}</div></div><span class="exact"><b>${fmt(val)}</b> <small>/ ${tgt?fmt(tgt)+' '+unit:'set a target'}</small></span></div>`};
-  $('#rings').innerHTML=ring('k','Calories',k,tk,'kcal',fmtN,'kcal left','kcal over')+ring('p','Protein',p,tp,'g',r1,'g to go','g over');
-  if(tp&&p>=tp)$('#rings .ringc.p .rc').innerHTML=`<b>${r1(p)}</b><small>target hit</small>`;
+  const st=S.settings;
+  // Windows: calories kcalMin..kcalTarget (under the min is fine), protein proteinTarget..proteinMax (under the min is not).
+  const ring=(cls,label,val,min,max,unit,fmt)=>{const scale=max||min;let center,status;
+    const c=(n,w,x='')=>`<b>${n}</b><small class="${x}">${w}</small>`;
+    if(!scale){center=c(fmt(val),unit);status=['','Set a window in Targets']}
+    else if(cls==='k'){
+      if(max&&val>max){center=c(fmt(val-max),'kcal over','over');status=['bad','Over the maximum']}
+      else if(min&&val<min){center=max?c(fmt(max-val),'kcal left'):c(fmt(min-val),'to min');status=['','Below the window · fine']}
+      else{center=max?c(fmt(max-val),'kcal left'):c(fmt(val),unit);status=['good','In the window ✓']}
+    }else{
+      if(min&&val<min){center=c(fmt(min-val),'g to min','over');status=['bad','Below the minimum']}
+      else if(max&&val>max){center=c(fmt(val-max),'g over max','warn');status=['warn','Above the maximum']}
+      else{center=c(fmt(val),'g · in window');status=['good','In the window ✓']}
+    }
+    const range=min&&max?`${fmt(min)}–${fmt(max)} ${unit}`:max?`max ${fmt(max)} ${unit}`:min?`min ${fmt(min)} ${unit}`:'no window';
+    return `<div class="ringc ${cls}"><span class="lbl"><i class="dot ${cls}"></i>${label}</span><div class="rwrap" role="img" aria-label="${label}: ${fmt(val)} ${unit}, window ${range}. ${status[1]}">${ringSvg(scale?val/scale:0,46,10,min&&max?[min/max,1]:null)}<div class="rc">${center}</div></div><span class="exact"><b>${fmt(val)}</b> <small>/ ${range}</small></span><span class="rst ${status[0]}">${status[1]}</span></div>`};
+  $('#rings').innerHTML=ring('k','Calories',k,+st.kcalMin||0,+st.kcalTarget||0,'kcal',fmtN)+ring('p','Protein',p,+st.proteinTarget||0,+st.proteinMax||0,'g',r1);
   $('#foodTotals').textContent=meals.length?`${meals.length} item${meals.length>1?'s':''}`:'';
   const hist=foodHistory();$('#foodHistory').innerHTML=Object.values(hist).map(h=>`<option value="${esc(h.name)}">`).join('');
   // training draft
@@ -206,8 +227,12 @@ $('#savePlan').addEventListener('click',()=>{const plan=planDraft().map(s=>({id:
   S.settings={...S.settings,plan};S.planDraft=null;$('#savePlan').textContent='Save plan';write('settings/main',S.settings);render()});
 
 // ---------- targets ----------
-function renderTargets(){['tKcal:kcalTarget','tProt:proteinTarget','tGoal:goalWeight'].forEach(x=>{const[id,k]=x.split(':');if(document.activeElement!==$('#'+id))$('#'+id).value=S.settings[k]??''})}
-$('#saveTargets').addEventListener('click',()=>{const v=id=>$('#'+id).value===''?'':+$('#'+id).value;S.settings={...S.settings,kcalTarget:v('tKcal'),proteinTarget:v('tProt'),goalWeight:v('tGoal')};write('settings/main',S.settings);$('#tNote').textContent='Saved.';render()});
+function renderTargets(){['tKcalMin:kcalMin','tKcal:kcalTarget','tProt:proteinTarget','tProtMax:proteinMax','tGoal:goalWeight'].forEach(x=>{const[id,k]=x.split(':');if(document.activeElement!==$('#'+id))$('#'+id).value=S.settings[k]??''})}
+$('#saveTargets').addEventListener('click',()=>{const v=id=>$('#'+id).value===''?'':+$('#'+id).value;
+  const bad=(lo,hi)=>lo!==''&&hi!==''&&lo>hi;
+  if(bad(v('tKcalMin'),v('tKcal'))){$('#tNote').textContent='Calories: the minimum has to be below the maximum.';return}
+  if(bad(v('tProt'),v('tProtMax'))){$('#tNote').textContent='Protein: the minimum has to be below the maximum.';return}
+  S.settings={...S.settings,kcalMin:v('tKcalMin'),kcalTarget:v('tKcal'),proteinTarget:v('tProt'),proteinMax:v('tProtMax'),goalWeight:v('tGoal')};write('settings/main',S.settings);$('#tNote').textContent='Saved.';render()});
 
 // ---------- charts ----------
 function lineChart(series,{h=220,yFmt=v=>v,labels}={}){
@@ -228,16 +253,16 @@ function lineChart(series,{h=220,yFmt=v=>v,labels}={}){
 }
 function barChart(weeks){
   const W=640,h=240,P={l:56,r:52,t:16,b:34};if(!weeks.length)return'';
-  const kMax=Math.max(...weeks.map(w=>w.k||0),+S.settings.kcalTarget||0)*1.15||1,pMax=Math.max(...weeks.map(w=>w.p||0),+S.settings.proteinTarget||0)*1.15||1;
+  const kMax=Math.max(...weeks.map(w=>w.k||0),+S.settings.kcalTarget||0,+S.settings.kcalMin||0)*1.15||1,pMax=Math.max(...weeks.map(w=>w.p||0),+S.settings.proteinTarget||0,+S.settings.proteinMax||0)*1.15||1;
   const n=weeks.length,bw=Math.min((W-P.l-P.r)/n,110),x0s=P.l+((W-P.l-P.r)-bw*n)/2,yk=v=>P.t+(1-v/kMax)*(h-P.t-P.b),yp=v=>P.t+(1-v/pMax)*(h-P.t-P.b);
   let g='';for(let i=0;i<=4;i++){const f=i/4,yy=P.t+f*(h-P.t-P.b);g+=`<line class="grid" x1="${P.l}" x2="${W-P.r}" y1="${yy}" y2="${yy}"/><text class="axis" x="${P.l-6}" y="${yy+4}" text-anchor="end">${Math.round(kMax*(1-f))}</text><text class="axis" x="${W-P.r+6}" y="${yy+4}">${Math.round(pMax*(1-f))}</text>`}
   let b='';weeks.forEach((w,i)=>{const x0=x0s+i*bw+bw*.18,ww=bw*.3;
     if(w.k!=null)b+=`<rect x="${x0}" y="${yk(w.k)}" width="${ww}" height="${h-P.b-yk(w.k)}" rx="2" fill="var(--kcal)"><title>${Math.round(w.k)} kcal/day</title></rect>`;
     if(w.p!=null)b+=`<rect x="${x0+ww+2}" y="${yp(w.p)}" width="${ww}" height="${h-P.b-yp(w.p)}" rx="2" fill="var(--protein)"><title>${Math.round(w.p)} g/day</title></rect>`;
     b+=`<text class="axis" x="${x0s+i*bw+bw/2}" y="${h-10}" text-anchor="middle">${esc(fmtShort(w.ws))}</text>`});
-  const tk=+S.settings.kcalTarget,tp=+S.settings.proteinTarget;
-  if(tk)b+=`<line x1="${P.l}" x2="${W-P.r}" y1="${yk(tk)}" y2="${yk(tk)}" stroke="var(--kcal)" stroke-dasharray="4 4"/>`;
-  if(tp)b+=`<line x1="${P.l}" x2="${W-P.r}" y1="${yp(tp)}" y2="${yp(tp)}" stroke="var(--protein)" stroke-dasharray="2 4"/>`;
+  // window edges: calories dashed, protein dotted
+  [[+S.settings.kcalMin,yk,'var(--kcal)','4 4'],[+S.settings.kcalTarget,yk,'var(--kcal)','4 4'],[+S.settings.proteinTarget,yp,'var(--protein)','2 4'],[+S.settings.proteinMax,yp,'var(--protein)','2 4']]
+    .forEach(([v,yf,col,da])=>{if(v)b+=`<line x1="${P.l}" x2="${W-P.r}" y1="${yf(v)}" y2="${yf(v)}" stroke="${col}" stroke-dasharray="${da}"/>`});
   return `<svg class="chart" viewBox="0 0 ${W} ${h}" role="img">${g}${b}</svg>`;
 }
 function renderProgress(){
@@ -281,7 +306,7 @@ async function loadAll(){
   const days={};(d.data||[]).forEach(r=>days[r.date]={date:r.date,meals:r.meals||[],workout:r.workout||{type:'rest'}});
   const wi={};(w.data||[]).forEach(r=>wi[r.date]={date:r.date,kg:+r.kg});
   S.days=days;S.weighins=wi;
-  const st=s.data;S.settings=st?{kcalTarget:st.kcal_target??'',proteinTarget:st.protein_target??'',goalWeight:st.goal_weight??'',plan:st.plan||[]}:{plan:[]};
+  const st=s.data;S.settings=st?{kcalTarget:st.kcal_target??'',kcalMin:st.kcal_min??'',proteinTarget:st.protein_target??'',proteinMax:st.protein_max??'',goalWeight:st.goal_weight??'',plan:st.plan||[]}:{plan:[]};
   if(!S.trainDirty)S.draftDay=null;
   render();
 }

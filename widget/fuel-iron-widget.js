@@ -7,7 +7,7 @@ const SUPABASE_ANON_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBh
 const APP_URL = "https://fuel-iron-log.vercel.app"; // tapping the widget opens this; change it if your Vercel address is different
 
 const KC_EMAIL = "fil_email", KC_PASS = "fil_password", KC_REFRESH = "fil_refresh";
-const COLORS = { bg: "#111418", text: "#f2f4f7", dim: "#8b94a3", kcal: "#ff9f43", protein: "#4cc9f0", track: "#2a3039" };
+const COLORS = { bg: "#1C1C20", text: "#F2F2F4", dim: "#9C9CA6", kcal: "#FF9F43", protein: "#2DD4B0", track: "#2C2C33", band: "#24513A", good: "#4ADE80", bad: "#F87171", warn: "#FBBF24" };
 
 const pad = n => String(n).padStart(2, "0");
 const iso = d => d.getFullYear() + "-" + pad(d.getMonth() + 1) + "-" + pad(d.getDate());
@@ -58,7 +58,7 @@ async function loadToday() {
   if (!jwt) return { error: "Open Scriptable and run this script to sign in." };
   const [days, settings] = await Promise.all([
     get(`days?select=meals&date=eq.${iso(new Date())}`, jwt),
-    get("settings?select=kcal_target,protein_target", jwt)
+    get("settings?select=*", jwt) // "*" keeps working before and after the kcal_min / protein_max database update
   ]);
   if (!Array.isArray(days)) return { error: "Couldn't load today's meals." };
   const meals = (days[0] && days[0].meals) || [];
@@ -66,45 +66,60 @@ async function loadToday() {
   return {
     kcal: meals.reduce((t, m) => t + (+m.kcal || 0), 0),
     protein: meals.reduce((t, m) => t + (+m.protein || 0), 0),
-    kcalTarget: +s.kcal_target || 0,
-    proteinTarget: +s.protein_target || 0,
+    kcalMin: +s.kcal_min || 0, kcalMax: +s.kcal_target || 0,
+    proteinMin: +s.protein_target || 0, proteinMax: +s.protein_max || 0,
     count: meals.length
   };
 }
 
-function bar(value, target, color, width) {
-  const h = 6, ctx = new DrawContext();
+// Same rules as the app: under the calorie minimum is fine; under the protein minimum is not.
+function status(kind, v, min, max) {
+  if (!min && !max) return { text: "no window", color: COLORS.dim };
+  if (kind === "kcal") {
+    if (max && v > max) return { text: `${Math.round(v - max)} over`, color: COLORS.bad };
+    if (min && v < min) return { text: max ? `${Math.round(max - v)} left` : "below min · fine", color: COLORS.dim };
+    return { text: max ? `${Math.round(max - v)} left ✓` : "in window ✓", color: COLORS.good };
+  }
+  if (min && v < min) return { text: `${Math.round(min - v)} g to min`, color: COLORS.bad };
+  if (max && v > max) return { text: `${Math.round(v - max)} g over max`, color: COLORS.warn };
+  return { text: "in window ✓", color: COLORS.good };
+}
+
+function bar(value, min, max, color, width) {
+  const h = 6, ctx = new DrawContext(), scale = max || min;
   ctx.size = new Size(width, h);
   ctx.opaque = false;
   ctx.respectScreenScale = true;
-  ctx.setFillColor(new Color(COLORS.track));
-  const track = new Path(); track.addRoundedRect(new Rect(0, 0, width, h), 3, 3); ctx.addPath(track); ctx.fillPath();
-  const w = target ? Math.max(h, Math.min(1, value / target) * width) : 0;
-  if (w) {
-    ctx.setFillColor(new Color(color));
-    const fill = new Path(); fill.addRoundedRect(new Rect(0, 0, w, h), 3, 3); ctx.addPath(fill); ctx.fillPath();
-  }
+  const rect = (x, w, c) => { ctx.setFillColor(new Color(c)); const p = new Path(); p.addRoundedRect(new Rect(x, 0, w, h), 3, 3); ctx.addPath(p); ctx.fillPath(); };
+  rect(0, width, COLORS.track);
+  if (min && max) rect(min / max * width, width - min / max * width, COLORS.band); // the window
+  const w = scale ? Math.max(h, Math.min(1, value / scale) * width) : 0;
+  if (w) rect(0, w, color);
   return ctx.getImage();
 }
 
-function line(stack, label, value, target, unit, color, width, small) {
+function line(stack, kind, value, min, max, unit, color, width, small) {
+  const n = x => Math.round(x).toLocaleString();
   const row = stack.addStack();
   row.centerAlignContent();
-  const v = row.addText(Math.round(value).toLocaleString());
+  const v = row.addText(n(value));
   v.font = Font.boldRoundedSystemFont(small ? 20 : 22);
   v.textColor = new Color(color);
-  const t = row.addText(target ? ` / ${target.toLocaleString()} ${unit}` : ` ${unit}`);
-  t.font = Font.mediumRoundedSystemFont(small ? 11 : 13);
+  const range = min && max ? `${n(min)}–${n(max)}` : max ? `max ${n(max)}` : min ? `min ${n(min)}` : "";
+  const t = row.addText(range ? ` / ${range} ${unit}` : ` ${unit}`);
+  t.font = Font.mediumRoundedSystemFont(small ? 10 : 13);
   t.textColor = new Color(COLORS.dim);
+  t.lineLimit = 1;
+  t.minimumScaleFactor = 0.7;
   row.addSpacer();
+  const st = status(kind, value, min, max);
   if (!small) {
-    const left = target ? Math.round(target - value) : null;
-    const l = row.addText(left === null ? label : left >= 0 ? `${left} left` : `${-left} over`);
+    const l = row.addText(st.text);
     l.font = Font.mediumSystemFont(12);
-    l.textColor = new Color(left !== null && left < 0 ? "#ff6b6b" : COLORS.dim);
+    l.textColor = new Color(st.color);
   }
   stack.addSpacer(4);
-  stack.addImage(bar(value, target, color, width));
+  stack.addImage(bar(value, min, max, st.color === COLORS.bad ? COLORS.bad : color, width));
 }
 
 async function build() {
@@ -131,9 +146,9 @@ async function build() {
   }
 
   const width = small ? 130 : 290;
-  line(w, "kcal", d.kcal, d.kcalTarget, "kcal", COLORS.kcal, width, small);
+  line(w, "kcal", d.kcal, d.kcalMin, d.kcalMax, "kcal", COLORS.kcal, width, small);
   w.addSpacer(small ? 8 : 10);
-  line(w, "protein", d.protein, d.proteinTarget, "g", COLORS.protein, width, small);
+  line(w, "protein", d.protein, d.proteinMin, d.proteinMax, "g", COLORS.protein, width, small);
   w.addSpacer();
 
   const foot = w.addText(`${d.count} ${d.count === 1 ? "item" : "items"} · ${new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}`);

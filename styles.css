@@ -7,7 +7,7 @@
   --kcal:#F07A0A; --kcal-ink:#B45309;
   --protein:#0FA383; --protein-ink:#0B7A63;
   --weight:#6D5BD0;
-  --good:#15803D; --bad:#DC2626;
+  --good:#15803D; --bad:#DC2626; --warn:#B45309;
   --radius:14px;
   --display:"Barlow Condensed","Arial Narrow",system-ui,sans-serif;
   --body:"Inter",system-ui,-apple-system,"Segoe UI",sans-serif;
@@ -21,7 +21,7 @@
   --kcal:#FF9F43; --kcal-ink:#FFB066;
   --protein:#2DD4B0; --protein-ink:#4FE0C0;
   --weight:#A594FF;
-  --good:#4ADE80; --bad:#F87171;
+  --good:#4ADE80; --bad:#F87171; --warn:#FBBF24;
   color-scheme:dark}}
 :root[data-theme="dark"]{
   --bg:#121214; --surface:#1C1C20; --sunk:#25252B; --line:#2E2E35; --track:#2C2C33;
@@ -30,7 +30,7 @@
   --kcal:#FF9F43; --kcal-ink:#FFB066;
   --protein:#2DD4B0; --protein-ink:#4FE0C0;
   --weight:#A594FF;
-  --good:#4ADE80; --bad:#F87171;
+  --good:#4ADE80; --bad:#F87171; --warn:#FBBF24;
   color-scheme:dark}
 
 *{box-sizing:border-box}
@@ -178,7 +178,10 @@ label.f input,label.f select,label.f textarea{text-transform:none;letter-spacing
 .rc{position:absolute;inset:0;display:grid;place-content:center;text-align:center;line-height:1}
 .rc b{font-family:var(--display);font-weight:700;font-size:2.1rem}
 .rc small{font-size:.68rem;font-weight:600;color:var(--muted);text-transform:uppercase;letter-spacing:.06em;margin-top:3px}
-.rc small.over{color:var(--bad)}
+.rc small.over{color:var(--bad)} .rc small.warn{color:var(--warn)}
+.rwrap .band{fill:none;stroke:var(--good);opacity:.3}
+.rst{font-size:.72rem;font-weight:600;color:var(--muted);text-align:center}
+.rst.good{color:var(--good)} .rst.bad{color:var(--bad)} .rst.warn{color:var(--warn)}
 .ringc .exact{font-size:.82rem;font-weight:600}
 .ringc .exact small{font-weight:500;color:var(--muted)}
 .ringc.k .exact b{color:var(--kcal-ink)} .ringc.p .exact b{color:var(--protein-ink)}
@@ -223,6 +226,10 @@ label.f input,label.f select,label.f textarea{text-transform:none;letter-spacing
 .planhead input{flex:1;font-family:var(--display);font-size:1.2rem;font-weight:700;text-transform:uppercase;letter-spacing:.03em}
 .tgrid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:10px}
 @media (max-width:560px){.tgrid{grid-template-columns:1fr}}
+.tgrid2{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px}
+fieldset.win{margin:0;border:1px solid var(--line);border-radius:12px;padding:12px 14px 14px;display:grid;gap:10px;min-width:0}
+fieldset.win legend{padding:0 6px;margin-left:-6px;font-weight:700;font-size:.9rem;display:flex;align-items:center;gap:6px;flex-wrap:wrap}
+fieldset.win .hint{margin:-6px 0 0}
 
 /* tables, chips, misc */
 table{width:100%;border-collapse:collapse;font-size:.88rem}
