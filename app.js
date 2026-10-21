@@ -140,8 +140,8 @@ function renderToday(){
     if(!scale){center=c(fmt(val),unit);status=['','Set a window in Targets']}
     else if(cls==='k'){
       if(max&&val>max){center=c(fmt(val-max),'kcal over','over');status=['bad','Over the maximum']}
-      else if(min&&val<min){center=max?c(fmt(max-val),'kcal left'):c(fmt(min-val),'to min');status=['','Below the window · fine']}
-      else{center=max?c(fmt(max-val),'kcal left'):c(fmt(val),unit);status=['good','In the window ✓']}
+      else if(min&&val<min){center=c(fmt(min-val),'kcal to min');status=['','Below the window · fine']}
+      else{center=max?c(fmt(max-val),'kcal to max'):c(fmt(val),unit);status=['good','In the window ✓']}
     }else{
       if(min&&val<min){center=c(fmt(min-val),'g to min','over');status=['bad','Below the minimum']}
       else if(max&&val>max){center=c(fmt(val-max),'g over max','warn');status=['warn','Above the maximum']}

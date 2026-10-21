@@ -77,8 +77,8 @@ function status(kind, v, min, max) {
   if (!min && !max) return { text: "no window", color: COLORS.dim };
   if (kind === "kcal") {
     if (max && v > max) return { text: `${Math.round(v - max)} over`, color: COLORS.bad };
-    if (min && v < min) return { text: max ? `${Math.round(max - v)} left` : "below min · fine", color: COLORS.dim };
-    return { text: max ? `${Math.round(max - v)} left ✓` : "in window ✓", color: COLORS.good };
+    if (min && v < min) return { text: `${Math.round(min - v)} to min`, color: COLORS.dim };
+    return { text: max ? `${Math.round(max - v)} to max ✓` : "in window ✓", color: COLORS.good };
   }
   if (min && v < min) return { text: `${Math.round(min - v)} g to min`, color: COLORS.bad };
   if (max && v > max) return { text: `${Math.round(v - max)} g over max`, color: COLORS.warn };
