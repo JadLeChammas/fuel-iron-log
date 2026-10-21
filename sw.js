@@ -1,6 +1,6 @@
 // Keeps the app shell available so it opens fast from the home screen.
 // Data always comes from Supabase over the network; it is never cached here.
-const CACHE = "fil-v1";
+const CACHE = "fil-v2";
 const SHELL = ["/", "/index.html", "/styles.css", "/app.js", "/config.js", "/manifest.webmanifest", "/icons/icon-192.png"];
 
 self.addEventListener("install", e => {

@@ -10,6 +10,20 @@ const fmtShort=s=>parse(s).toLocaleDateString('en-GB',{day:'numeric',month:'shor
 const weekStart=s=>{const d=parse(s);const k=(d.getDay()+6)%7;d.setDate(d.getDate()-k);return iso(d)};
 const uid=()=>Math.random().toString(36).slice(2,10);
 const r1=n=>Math.round(n*10)/10;
+const fmtN=n=>Math.round(n).toLocaleString('en-GB');
+const TRASH='<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 7h16M10 11v6M14 11v6M6 7l1 12a2 2 0 0 0 2 2h6a2 2 0 0 0 2-2l1-12M9 7V4h6v3"/></svg>';
+const IC={
+  weight:'<svg viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="16" rx="4"/><path d="M8 9a4 4 0 0 1 8 0M12 9l1.5-2"/></svg>',
+  goal:'<svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="8"/><circle cx="12" cy="12" r="3.5"/></svg>',
+  week:'<svg viewBox="0 0 24 24"><path d="M12 3c1 4 5 5.5 5 10a5 5 0 0 1-10 0c0-2.5 1.5-3.5 2-5.5 1.5 1 2 2.5 2 2.5S13 7 12 3Z"/></svg>',
+  sessions:'<svg viewBox="0 0 24 24"><path d="M6.5 6.5v11M17.5 6.5v11M3.5 9v6M20.5 9v6M6.5 12h11"/></svg>'
+};
+// SVG progress ring. r is the radius in a 0..2r+stroke box; fraction is clamped to 0..1.
+function ringSvg(frac,r,sw){const c=2*Math.PI*r,f=Math.max(0,Math.min(1,frac||0)),s=2*r+sw;
+  return `<svg viewBox="0 0 ${s} ${s}" aria-hidden="true"><circle class="tr" cx="${s/2}" cy="${s/2}" r="${r}" stroke-width="${sw}"/><circle class="pg" cx="${s/2}" cy="${s/2}" r="${r}" stroke-width="${sw}" stroke-dasharray="${c}" stroke-dashoffset="${c*(1-f)}"${f?'':' style="opacity:0"'}/></svg>`}
+function spark(vals){if(vals.length<2)return'';const lo=Math.min(...vals),hi=Math.max(...vals),rg=hi-lo||1;
+  return `<svg class="spark" viewBox="0 0 100 28" preserveAspectRatio="none" aria-hidden="true"><polyline points="${vals.map((v,i)=>`${i/(vals.length-1)*100},${3+(hi-v)/rg*22}`).join(' ')}"/></svg>`}
+let toastT;function toast(t){const el=$('#toast');el.textContent=t;el.classList.add('on');clearTimeout(toastT);toastT=setTimeout(()=>el.classList.remove('on'),1600)}
 
 const S={days:{},weighins:{},settings:{plan:[]},day:iso(new Date()),tab:'today',draftType:null,draftEx:null,draftDay:null,planDraft:null};
 
@@ -45,7 +59,16 @@ function saveDay(d,doc){S.days[d]=doc;render();write('days/'+d,doc)}
 
 // ---------- tabs ----------
 document.querySelectorAll('.tabs button').forEach(b=>b.addEventListener('click',()=>{S.tab=b.dataset.tab;try{localStorage.setItem('fil-tab',S.tab)}catch(e){}renderTabs();render()}));
-function renderTabs(){document.querySelectorAll('.tabs button').forEach(b=>b.setAttribute('aria-selected',b.dataset.tab===S.tab));['today','plan','progress','targets'].forEach(t=>$('#view-'+t).hidden=t!==S.tab)}
+function renderTabs(){const tabs=['today','plan','progress','targets'];document.querySelectorAll('.tabs button').forEach(b=>b.setAttribute('aria-selected',b.dataset.tab===S.tab));$('.tabs').style.setProperty('--i',tabs.indexOf(S.tab));tabs.forEach(t=>$('#view-'+t).hidden=t!==S.tab)}
+
+// ---------- theme ----------
+function curTheme(){return document.documentElement.dataset.theme||(matchMedia('(prefers-color-scheme: dark)').matches?'dark':'light')}
+function syncThemeBtn(){const dark=curTheme()==='dark';$('#themeBtn').setAttribute('aria-label',dark?'Switch to light mode':'Switch to dark mode')}
+$('#themeBtn').addEventListener('click',()=>{const t=curTheme()==='dark'?'light':'dark';document.documentElement.dataset.theme=t;
+  document.querySelectorAll('meta[name="theme-color"]').forEach(m=>m.content=t==='dark'?'#121214':'#F6F5F2');
+  try{localStorage.setItem('fil-theme',t)}catch(e){}syncThemeBtn();if(S.tab==='progress')renderProgress()});
+syncThemeBtn();
+$('#hdrDate').textContent=new Date().toLocaleDateString('en-GB',{weekday:'short',day:'numeric',month:'short'});
 
 // ---------- plates ----------
 function sortedWeights(){return Object.values(S.weighins).filter(w=>w&&w.kg).sort((a,b)=>a.date<b.date?-1:1)}
@@ -61,30 +84,51 @@ function renderPlates(){
   const st=weekStats(weekStart(iso(new Date())));
   const goal=+S.settings.goalWeight||null;
   let diff=last&&first?r1(last.kg-first.kg):null;
+  // progress toward the goal, measured from the first weigh-in
+  let goalViz='',goalNote=first?`started ${fmtShort(first.date)}`:'';
+  if(goal&&first&&last){const total=first.kg-goal,done=first.kg-last.kg,left=r1(Math.abs(last.kg-goal));
+    const pct=total?Math.max(0,Math.min(1,done/total)):1,reached=total?(last.kg-goal)*Math.sign(total)<=0:true;
+    goalViz=`<div class="mbar" role="img" aria-label="${Math.round(pct*100)}% of the way to goal"><span style="width:${pct*100}%"></span></div>`;
+    goalNote=reached?'Goal reached':`${left} kg to goal · ${Math.round(pct*100)}%`}
+  else if(!goal)goalNote='Set a goal in Targets';
+  const mini=(n,aim,cls,lbl)=>`<span class="mr ${cls}">${ringSvg(n/aim,13,5)}<span><b>${n}/${aim}</b> ${lbl}</span></span>`;
   const tiles=[
-    ['Weight',last?`${r1(last.kg)}<small>kg</small>`:'–',last?`on ${fmtShort(last.date)}`:'Add a weigh-in'],
-    ['Since start',diff!==null&&ws.length>1?`<span class="${diff<=0?'down':'up'}">${diff>0?'+':''}${diff}</span><small>kg</small>`:'–',goal&&last?`${r1(last.kg-goal)} kg to goal`:(first?`started ${fmtShort(first.date)}`:'')],
-    ['This week',st.k!==null?`${Math.round(st.k)}<small>kcal/day</small>`:'–',st.p!==null?`${Math.round(st.p)} g protein/day`:'No meals logged yet'],
-    ['Sessions',`${st.gym}<small>gym</small> ${st.street}<small>street</small>`,'Aim: 3 gym + 1 street'],
+    ['weight','Weight',last?`${r1(last.kg)}<small>kg</small>`:'–',spark(ws.slice(-10).map(w=>w.kg)),last?`on ${fmtShort(last.date)}`:'Add a weigh-in'],
+    ['goal','Since start',diff!==null&&ws.length>1?`<span class="${diff<=0?'down':'up'}">${diff>0?'+':''}${diff}</span><small>kg</small>`:'–',goalViz,goalNote],
+    ['week','This week',st.k!==null?`<span class="kc">${fmtN(st.k)}</span><small>kcal/day</small>`:'–',st.k!==null?`<div class="duo"><span><i class="dot k"></i>${fmtN(st.k)} <small>kcal avg</small></span><span><i class="dot p"></i>${Math.round(st.p)} g <small>protein avg</small></span></div>`:'',st.n?`${st.n} day${st.n>1?'s':''} logged`:'No meals logged yet'],
+    ['sessions','Sessions',`${st.gym+st.street}<small>this week</small>`,`<div class="minirings">${mini(st.gym,3,'g','gym')}${mini(st.street,1,'s','street')}</div>`,'Aim: 3 gym + 1 street'],
   ];
-  $('#plates').innerHTML=tiles.map(t=>`<div class="plate"><span class="lbl">${t[0]}</span><span class="val num">${t[1]}</span><span class="note">${t[2]}</span></div>`).join('');
+  $('#plates').innerHTML=tiles.map(t=>`<div class="plate"><div class="ph"><span class="ic" aria-hidden="true">${IC[t[0]]}</span><span class="lbl">${t[1]}</span></div><span class="val">${t[2]}</span>${t[3]?`<div class="viz">${t[3]}</div>`:''}<span class="note">${t[4]}</span></div>`).join('');
 }
 
 // ---------- today ----------
 function foodHistory(){const m={};Object.values(S.days).forEach(d=>(d.meals||[]).forEach(x=>{m[x.name.trim().toLowerCase()]={name:x.name,kcal:x.kcal,protein:x.protein}}));return m}
 function renderToday(){
   const d=S.day,doc=dayDoc(d);
-  $('#dayLabel').textContent=(d===iso(new Date())?'Today · ':'')+fmtDay(d);
+  const today=iso(new Date());
+  $('#dayLabel').textContent=fmtDay(d);
+  $('#dayKick').textContent=d===today?'Today':d===addDays(today,-1)?'Yesterday':'';
+  $('#goToday').hidden=d===today;
+  // week strip: Monday to Sunday around the shown day, with dots for logged food (orange) and training (blue)
+  const ws0=weekStart(d);
+  $('#weekStrip').innerHTML=Array.from({length:7},(_,i)=>{const x=addDays(ws0,i),dd=S.days[x],dt=parse(x);
+    const food=dd&&(dd.meals||[]).length,train=dd&&dd.workout&&dd.workout.type&&dd.workout.type!=='rest';
+    return `<button type="button" data-day="${x}"${x===d?' aria-current="date"':''} class="${x===today?'is-today':''}" aria-label="${fmtDay(x)}${food?', food logged':''}${train?', training logged':''}"><span class="wd">${dt.toLocaleDateString('en-GB',{weekday:'short'}).slice(0,2)}</span><span class="dn">${dt.getDate()}</span><span class="dots">${food?'<i class="k"></i>':''}${train?'<i class="t"></i>':''}</span></button>`}).join('');
   // food
-  const meals=doc.meals||[];const order={Breakfast:0,Lunch:1,Dinner:2,Snack:3};
-  const sorted=[...meals].sort((a,b)=>(order[a.meal]??4)-(order[b.meal]??4));
-  $('#mealRows').innerHTML=sorted.length?sorted.map(m=>`<tr><td><span class="chip">${esc(m.meal)}</span></td><td>${esc(m.name)}</td><td class="r num">${Math.round(m.kcal)}</td><td class="r num">${r1(m.protein)}</td><td class="r"><button class="x" data-del="${esc(m.id)}" aria-label="Remove ${esc(m.name)}">×</button></td></tr>`).join(''):`<tr><td colspan="5" class="empty">Nothing logged for this day yet. Add your first meal below.</td></tr>`;
+  const meals=doc.meals||[];const MEALS=['Breakfast','Lunch','Dinner','Snack'];
+  const groups=[...MEALS,...new Set(meals.map(m=>m.meal).filter(m=>!MEALS.includes(m)))];
+  $('#mealRows').innerHTML=groups.map(g=>{const its=meals.filter(m=>m.meal===g);if(!its.length&&!MEALS.includes(g))return'';
+    const gk=its.reduce((s,m)=>s+(+m.kcal||0),0),gp=its.reduce((s,m)=>s+(+m.protein||0),0);
+    return `<div class="meal"><div class="meal-h"><h3>${esc(g)}</h3>${its.length?`<span class="tot"><b class="k">${fmtN(gk)}</b> kcal · <b class="p">${r1(gp)}</b> g</span>`:''}</div>`+
+      (its.length?its.map(m=>`<div class="item"><span class="n">${esc(m.name)}</span><span class="v">${fmtN(+m.kcal||0)}<small>kcal</small></span><span class="v">${r1(+m.protein||0)}<small>g</small></span><button class="x" data-del="${esc(m.id)}" aria-label="Remove ${esc(m.name)}">${TRASH}</button></div>`).join('')
+        :`<button type="button" class="meal-add" data-addmeal="${esc(g)}">+ Add ${esc(g.toLowerCase())}</button>`)+`</div>`}).join('');
   const k=meals.reduce((s,m)=>s+(+m.kcal||0),0),p=meals.reduce((s,m)=>s+(+m.protein||0),0);
   const tk=+S.settings.kcalTarget||0,tp=+S.settings.proteinTarget||0;
-  $('#kcalTxt').textContent=tk?`${Math.round(k)} / ${tk} kcal · ${tk-Math.round(k)>=0?(tk-Math.round(k))+' left':Math.round(k)-tk+' over'}`:`${Math.round(k)} kcal · set a target`;
-  $('#protTxt').textContent=tp?`${r1(p)} / ${tp} g · ${tp-p>0?r1(tp-p)+' g to go':'target hit'}`:`${r1(p)} g · set a target`;
-  $('#kcalFill').style.width=(tk?Math.min(100,k/tk*100):0)+'%';
-  $('#protFill').style.width=(tp?Math.min(100,p/tp*100):0)+'%';
+  const ring=(cls,label,val,tgt,unit,fmt,leftWord,overWord)=>{const left=tgt-val;
+    const center=tgt?`<b>${fmt(Math.abs(left))}</b><small class="${left<0?'over':''}">${left>=0?leftWord:overWord}</small>`:`<b>${fmt(val)}</b><small>${unit}</small>`;
+    return `<div class="ringc ${cls}"><span class="lbl"><i class="dot ${cls}"></i>${label}</span><div class="rwrap" role="img" aria-label="${label}: ${fmt(val)} of ${tgt?fmt(tgt):'no target'} ${unit}">${ringSvg(tgt?val/tgt:0,46,10)}<div class="rc">${center}</div></div><span class="exact"><b>${fmt(val)}</b> <small>/ ${tgt?fmt(tgt)+' '+unit:'set a target'}</small></span></div>`};
+  $('#rings').innerHTML=ring('k','Calories',k,tk,'kcal',fmtN,'kcal left','kcal over')+ring('p','Protein',p,tp,'g',r1,'g to go','g over');
+  if(tp&&p>=tp)$('#rings .ringc.p .rc').innerHTML=`<b>${r1(p)}</b><small>target hit</small>`;
   $('#foodTotals').textContent=meals.length?`${meals.length} item${meals.length>1?'s':''}`:'';
   const hist=foodHistory();$('#foodHistory').innerHTML=Object.values(hist).map(h=>`<option value="${esc(h.name)}">`).join('');
   // training draft
@@ -105,7 +149,7 @@ function dirty(){S.trainDirty=true;$('#trainNote').textContent='Unsaved changes'
 function renderExRows(){
   const ex=S.draftEx||[];
   $('#exRows').innerHTML=(ex.length?`<div class="exrow exhead"><span>Exercise</span><span>Sets</span><span>Reps</span><span>kg</span><span></span></div>`:'<div class="empty">Load a session from your plan, or add exercises one by one.</div>')+
-  ex.map((e,i)=>`<div class="exrow" data-i="${i}"><input aria-label="Exercise" data-f="name" value="${esc(e.name)}" placeholder="Exercise"><input aria-label="Sets" data-f="sets" placeholder="Sets" type="number" min="0" inputmode="numeric" value="${esc(e.sets)}"><input aria-label="Reps" data-f="reps" value="${esc(e.reps)}" placeholder="Reps"><input aria-label="Weight kg" data-f="weight" type="number" step="0.5" min="0" inputmode="decimal" value="${esc(e.weight)}" placeholder="kg"><button class="x" data-rm="${i}" aria-label="Remove exercise">×</button></div>`).join('');
+  ex.map((e,i)=>`<div class="exrow" data-i="${i}"><input aria-label="Exercise" data-f="name" value="${esc(e.name)}" placeholder="Exercise"><input aria-label="Sets" data-f="sets" placeholder="Sets" type="number" min="0" inputmode="numeric" value="${esc(e.sets)}"><input aria-label="Reps" data-f="reps" value="${esc(e.reps)}" placeholder="Reps"><input aria-label="Weight kg" data-f="weight" type="number" step="0.5" min="0" inputmode="decimal" value="${esc(e.weight)}" placeholder="kg"><button class="x" data-rm="${i}" aria-label="Remove exercise">${TRASH}</button></div>`).join('');
 }
 $('#exRows').addEventListener('input',e=>{const row=e.target.closest('.exrow');if(!row)return;S.draftEx[+row.dataset.i][e.target.dataset.f]=e.target.value;dirty()});
 $('#exRows').addEventListener('click',e=>{const b=e.target.closest('[data-rm]');if(!b)return;S.draftEx.splice(+b.dataset.rm,1);renderExRows();dirty()});
@@ -123,16 +167,21 @@ $('#fName').addEventListener('change',()=>{const h=foodHistory()[$('#fName').val
 $('#foodForm').addEventListener('submit',e=>{e.preventDefault();
   const name=$('#fName').value.trim();if(!name)return;
   const doc={...dayDoc(S.day)};doc.meals=[...(doc.meals||[]),{id:uid(),name,kcal:+$('#fKcal').value||0,protein:+$('#fProt').value||0,meal:$('#fMeal').value}];
-  saveDay(S.day,doc);$('#fName').value='';$('#fKcal').value='';$('#fProt').value='';$('#fName').focus();
+  saveDay(S.day,doc);$('#fName').value='';$('#fKcal').value='';$('#fProt').value='';$('#fName').focus();toast('Added ✓');
 });
-$('#mealRows').addEventListener('click',e=>{const b=e.target.closest('[data-del]');if(!b)return;const doc={...dayDoc(S.day)};doc.meals=(doc.meals||[]).filter(m=>m.id!==b.dataset.del);saveDay(S.day,doc)});
+function setMeal(m){$('#fMeal').value=m;document.querySelectorAll('#mealSeg button').forEach(b=>b.setAttribute('aria-checked',b.dataset.meal===m))}
+$('#mealSeg').addEventListener('click',e=>{const b=e.target.closest('[data-meal]');if(b)setMeal(b.dataset.meal)});
+$('#mealSeg').addEventListener('keydown',e=>{if(e.key!=='ArrowRight'&&e.key!=='ArrowLeft')return;const bs=[...document.querySelectorAll('#mealSeg button')];const i=bs.findIndex(b=>b.dataset.meal===$('#fMeal').value);const n=bs[(i+(e.key==='ArrowRight'?1:bs.length-1))%bs.length];setMeal(n.dataset.meal);n.focus();e.preventDefault()});
+$('#weekStrip').addEventListener('click',e=>{const b=e.target.closest('[data-day]');if(!b)return;S.day=b.dataset.day;render()});
+$('#mealRows').addEventListener('click',e=>{const a=e.target.closest('[data-addmeal]');if(a){setMeal(a.dataset.addmeal);$('#fName').focus();$('#foodForm').scrollIntoView({block:'nearest',behavior:'smooth'});return}
+  const b=e.target.closest('[data-del]');if(!b)return;const doc={...dayDoc(S.day)};doc.meals=(doc.meals||[]).filter(m=>m.id!==b.dataset.del);saveDay(S.day,doc)});
 $('#prevDay').addEventListener('click',()=>{S.day=addDays(S.day,-1);render()});
 $('#nextDay').addEventListener('click',()=>{S.day=addDays(S.day,1);render()});
 $('#goToday').addEventListener('click',()=>{S.day=iso(new Date());render()});
 $('#saveW').addEventListener('click',()=>{const kg=parseFloat($('#wKg').value);if(!(kg>0)){$('#wNote').textContent='Enter your weight in kg.';return}const w={date:S.day,kg:r1(kg)};S.weighins[S.day]=w;render();write('weighins/'+S.day,w)});
 $('#delW').addEventListener('click',()=>{delete S.weighins[S.day];render();remove('weighins/'+S.day)});
 // meal default by time
-(()=>{const h=new Date().getHours();$('#fMeal').value=h<11?'Breakfast':h<16?'Lunch':h<21?'Dinner':'Snack'})();
+(()=>{const h=new Date().getHours();setMeal(h<11?'Breakfast':h<16?'Lunch':h<21?'Dinner':'Snack')})();
 
 // ---------- plan ----------
 function planDraft(){if(!S.planDraft)S.planDraft=JSON.parse(JSON.stringify(S.settings.plan||[]));return S.planDraft}
@@ -141,7 +190,7 @@ function renderPlan(){
   $('#planList').innerHTML=plan.length?plan.map((s,si)=>`<div class="card" data-si="${si}">
     <div class="planhead"><input aria-label="Session name" data-sf="name" value="${esc(s.name)}"><button class="btn ghost sm" data-rmsession="${si}">Remove session</button></div>
     <div class="exgrid">${s.exercises.length?`<div class="exrow exhead"><span>Exercise</span><span>Sets</span><span>Reps</span><span>kg</span><span></span></div>`:''}
-    ${s.exercises.map((e,ei)=>`<div class="exrow" data-ei="${ei}"><input aria-label="Exercise" data-f="name" value="${esc(e.name)}" placeholder="Exercise"><input aria-label="Sets" data-f="sets" placeholder="Sets" type="number" min="0" inputmode="numeric" value="${esc(e.sets)}"><input aria-label="Reps" data-f="reps" value="${esc(e.reps)}" placeholder="Reps"><input aria-label="Weight kg" data-f="weight" type="number" step="0.5" min="0" inputmode="decimal" value="${esc(e.weight)}" placeholder="kg"><button class="x" data-rmex="${ei}" aria-label="Remove exercise">×</button></div>`).join('')}</div>
+    ${s.exercises.map((e,ei)=>`<div class="exrow" data-ei="${ei}"><input aria-label="Exercise" data-f="name" value="${esc(e.name)}" placeholder="Exercise"><input aria-label="Sets" data-f="sets" placeholder="Sets" type="number" min="0" inputmode="numeric" value="${esc(e.sets)}"><input aria-label="Reps" data-f="reps" value="${esc(e.reps)}" placeholder="Reps"><input aria-label="Weight kg" data-f="weight" type="number" step="0.5" min="0" inputmode="decimal" value="${esc(e.weight)}" placeholder="kg"><button class="x" data-rmex="${ei}" aria-label="Remove exercise">${TRASH}</button></div>`).join('')}</div>
     <div class="row"><button class="btn sm" data-addex="${si}">+ Exercise</button></div></div>`).join(''):'<div class="card empty">No sessions yet. Add one for each gym day.</div>';
 }
 $('#planList').addEventListener('input',e=>{const c=e.target.closest('[data-si]');if(!c)return;const s=planDraft()[+c.dataset.si];
@@ -168,7 +217,7 @@ function lineChart(series,{h=220,yFmt=v=>v,labels}={}){
   if(hi-lo<2){hi+=1;lo-=1}const padv=(hi-lo)*.12;lo-=padv;hi+=padv;
   const n=labels.length;const x=i=>P.l+(n<=1?(W-P.l-P.r)/2:i*(W-P.l-P.r)/(n-1));const y=v=>P.t+(hi-v)/(hi-lo)*(h-P.t-P.b);
   const ticks=4;let g='';for(let i=0;i<=ticks;i++){const v=lo+(hi-lo)*i/ticks;g+=`<line class="grid" x1="${P.l}" x2="${W-P.r}" y1="${y(v)}" y2="${y(v)}"/><text class="axis" x="${P.l-6}" y="${y(v)+4}" text-anchor="end">${yFmt(v)}</text>`}
-  const step=Math.max(1,Math.ceil(n/5));let xl='';labels.forEach((l,i)=>{if(i%step===0||i===n-1)xl+=`<text class="axis" x="${x(i)}" y="${h-10}" text-anchor="middle">${esc(l)}</text>`});
+  const step=Math.max(1,Math.ceil(n/5));let xl='';labels.forEach((l,i)=>{if(i%step===0||i===n-1)xl+=`<text class="axis" x="${x(i)}" y="${h-10}" text-anchor="${n>1&&i===n-1?'end':'middle'}">${esc(l)}</text>`});
   let body='';series.forEach(s=>{const pts=s.pts.map(p=>[x(p.i),y(p.y)]);if(!pts.length)return;
     if(s.goal!=null)body+=`<line x1="${P.l}" x2="${W-P.r}" y1="${y(s.goal)}" y2="${y(s.goal)}" stroke="${s.color}" stroke-dasharray="4 4" stroke-width="1.5"/><text class="axis" x="${W-P.r}" y="${y(s.goal)-5}" text-anchor="end">goal ${s.goal}</text>`;
     if(s.area&&pts.length>1)body+=`<path class="area" fill="${s.color}" d="M${pts[0][0]},${h-P.b} ${pts.map(p=>'L'+p[0]+','+p[1]).join(' ')} L${pts[pts.length-1][0]},${h-P.b}Z"/>`;
@@ -193,7 +242,7 @@ function barChart(weeks){
 }
 function renderProgress(){
   const ws=sortedWeights();
-  $('#wChart').innerHTML=ws.length?lineChart([{pts:ws.map((w,i)=>({i,y:w.kg})),color:'var(--accent)',area:true,goal:+S.settings.goalWeight||null}],{labels:ws.map(w=>fmtShort(w.date)),yFmt:v=>r1(v)}):'<p class="empty">Your weight line appears here after your first weigh-in.</p>';
+  $('#wChart').innerHTML=ws.length?lineChart([{pts:ws.map((w,i)=>({i,y:w.kg})),color:'var(--weight)',area:true,goal:+S.settings.goalWeight||null}],{labels:ws.map(w=>fmtShort(w.date)),yFmt:v=>r1(v)}):'<p class="empty">Your weight line appears here after your first weigh-in.</p>';
   if(ws.length>1){const a=ws[0],b=ws[ws.length-1],days=(parse(b.date)-parse(a.date))/864e5;const per=days>0?r1((b.kg-a.kg)/days*7):0;$('#wTrend').textContent=`${per>0?'+':''}${per} kg / week on average`}else $('#wTrend').textContent='';
   // weekly
   const dates=Object.keys(S.days).filter(d=>(S.days[d].meals||[]).length).sort();
